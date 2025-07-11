@@ -1,274 +1,292 @@
 """
-Bloc de Notas Cifrado
+Bloc de Notas Cifrado Mejorado
 
 Esta aplicación permite crear, editar, eliminar y visualizar notas
-que se almacenan de forma cifrada en un archivo local. Solo un usuario
-con la contraseña correcta puede acceder a las notas.
+almacenadas de forma cifrada en un archivo local.
+Sólo un usuario con la contraseña correcta puede acceder o modificar las notas.
 
-Utiliza cifrado simétrico (Fernet/AES) para proteger la información.
+Se utiliza cifrado simétrico (Fernet/AES) para proteger la información.
 """
 import os
 import json
 import base64
 import hashlib
 import tkinter as tk
-from tkinter import messagebox, simpledialog, scrolledtext, Toplevel
+from tkinter import messagebox, simpledialog, scrolledtext, Toplevel, font as tkFont
+from tkinter import ttk
 from cryptography.fernet import Fernet, InvalidToken
 
-NOTES_FILE = "notes.enc" #Nombre del archivo donde se guardan las notas cifradas
+# Path del archivo cifrado de notas\
+NOTES_FILE = "notes.enc"
 
-# Funciones de cifrado #
+# ---------- Funciones de cifrado ----------
+
 def make_key(password: str) -> bytes:
     """
-    Deriva/genera una clave criptográfica a partir de la contraseña del usuario.
-     
+    Genera una clave de cifrado a partir de la contraseña.
+
     Args:
-        password: La contraseña proporcionada por el usuario
+        password (str): Contraseña proporcionada por el usuario.
 
     Returns:
-        Una clave de 32 bytes codificada en base64 para el cifrado Fernet
+        bytes: Clave de 32 bytes codificada en base64 para Fernet.
     """
+    # Derivar hash SHA-256 de la contraseña
     digest = hashlib.sha256(password.encode()).digest()
+    # Codificar en base64 URL-safe para Fernet
     return base64.urlsafe_b64encode(digest)
+
 
 def load_notes(fernet: Fernet) -> list:
     """
-    Carga y descifra las notas guardadas.
-    
+    Carga y descifra la lista de notas desde el archivo cifrado.
+
     Args:
-        fernet: Objeto Fernet inicializado con la clave derivada de la contraseña 
-        proporcionada por el usuario
-    
+        fernet (Fernet): Objeto Fernet instanciado con la clave derivada.
+
     Returns:
-        Lista de notas descifradas, oh una lista vacía si no existen notas guardadas.
-        
+        list: Lista de diccionarios con claves 'title' y 'body'.
+
     Raises:
-        Invalid Token: Si la contraseña es incorrecta o el archivo está corrupto.
+        InvalidToken: Si la clave no coincide o el archivo está corrupto.
     """
+    # Si el archivo no existe, devolver lista vacía
     if not os.path.exists(NOTES_FILE):
         return []
+    # Leer datos cifrados
     with open(NOTES_FILE, "rb") as file:
         data = file.read()
+    # Descifrar y parsear JSON
     plaintext = fernet.decrypt(data)
     return json.loads(plaintext.decode())
 
+
 def save_notes(notes: list, fernet: Fernet):
     """
-    Cifra y guarda las notas en el archivo .enc
-    
+    Cifra y guarda la lista de notas en el archivo.
+
     Args:
-        notes: Lista de notas a guardar
-        fernet: Objeto Fernet inicializado con la clave derivada de la contraseña
-        proporcionada por el usuario
+        notes (list): Lista de diccionarios de notas.
+        fernet (Fernet): Objeto Fernet instanciado con la clave derivada.
     """
+    # Convertir lista a JSON y cifrar
     plaintext = json.dumps(notes).encode()
     token = fernet.encrypt(plaintext)
+    # Escribir datos cifrados en disco
     with open(NOTES_FILE, "wb") as file:
         file.write(token)
 
-# GUI
+
+# ---------- Clase de la Aplicación ----------
 class SecureNotepadApp:
     """
-    Clase principal de la aplicación de Notes Crypted
-    Maneja la interfaz gráfica y las operaciones con notas.
+    Interfaz gráfica para gestionar notas cifradas.
+
+    Permite añadir, editar, eliminar y visualizar notas.
     """
     def __init__(self, root, fernet: Fernet, notes: list):
         """
-        Inicializa la interfaz gráfica de la aplicación.
-        
+        Inicializa la ventana principal y widgets.
+
         Args:
-            root: Ventana principal de Tkinter
-            fernet: Objeto Fernet para cifrado/descifrado
-            notes: Lista de notas descifradas
+            root (tk.Tk): Ventana raíz de Tkinter.
+            fernet (Fernet): Objeto para cifrar/descifrar notas.
+            notes (list): Lista inicial de notas descifradas.
         """
         self.root = root
         self.root.title("Bloc de Notas Cifrado")
         self.fernet = fernet
         self.notes = notes
 
-        #Lista de notas
-        self.listbox = tk.Listbox(root, width=50, height=15)
-        self.listbox.pack(padx=10, pady=5)
+        # Configuración de estilos ttk para aspecto moderno
+        style = ttk.Style(root)
+        style.configure('TFrame', background='#f0f0f0')
+        style.configure('TButton', padding=6)
+        style.configure('TLabel', background='#f0f0f0')
+        style.configure('Listbox.TFrame', background='#ffffff', relief='sunken')
+
+        # Fuentes personalizadas
+        self.font_title = tkFont.Font(family="Helvetica", size=14, weight="bold")
+        self.font_body = tkFont.Font(family="Helvetica", size=12)
+
+        # Marco principal con padding
+        main_frame = ttk.Frame(root, padding="10 10 10 10")
+        main_frame.grid(row=0, column=0, sticky='nsew')
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(0, weight=1)
+
+        # Marco para la lista de notas (con borde)
+        list_frame = ttk.Frame(main_frame, style='Listbox.TFrame')
+        list_frame.grid(row=0, column=0, columnspan=5, sticky='nsew', pady=5)
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+
+        # Listbox para títulos de notas
+        self.listbox = tk.Listbox(list_frame, font=self.font_body, bd=0, highlightthickness=0)
+        self.listbox.grid(row=0, column=0, sticky='nsew')
         self.listbox.bind("<Double-1>", self.view_note)
+
+        # Scrollbar vertical
+        scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.listbox.yview)
+        scrollbar.grid(row=0, column=1, sticky='ns')
+        self.listbox['yscrollcommand'] = scrollbar.set
+
         self.refresh_listbox()
 
-        # Barra de botones
-        buttons_frame = tk.Frame(root)
-        buttons_frame.pack(pady=10)
-
-        tk.Button(buttons_frame, text="Añadir Nota", command=self.add_note).grid(row=0, column=0, padx=5)
-        tk.Button(buttons_frame, text="Editar Nota", command=self.edit_note).grid(row=0, column=1, padx=5)
-        tk.Button(buttons_frame, text="Eliminar Nota", command=self.delete_note).grid(row=0, column=2, padx=5)
-        tk.Button(buttons_frame, text="Refrescar", command=self.refresh_listbox).grid(row=0, column=3, padx=5)
-        tk.Button(buttons_frame, text="Salir", command=root.quit).grid(row=0, column=4, padx=5)
+        # Botones de acciones
+        ttk.Button(main_frame, text="➕ Añadir", command=self.add_note).grid(row=1, column=0, pady=5, sticky='ew')
+        ttk.Button(main_frame, text="✏️ Editar", command=self.edit_note).grid(row=1, column=1, pady=5, sticky='ew')
+        ttk.Button(main_frame, text="🗑️ Eliminar", command=self.delete_note).grid(row=1, column=2, pady=5, sticky='ew')
+        ttk.Button(main_frame, text="🔄 Refrescar", command=self.refresh_listbox).grid(row=1, column=3, pady=5, sticky='ew')
+        ttk.Button(main_frame, text="🚪 Salir", command=root.quit).grid(row=1, column=4, pady=5, sticky='ew')
 
     def refresh_listbox(self):
         """
-        Actualiza el listado de notas en la interfaz.
+        Actualiza los títulos mostrados en la lista.
         """
         self.listbox.delete(0, tk.END)
         for i, note in enumerate(self.notes, 1):
-            title = note["title"]
-            self.listbox.insert(tk.END, f"{i}. {title}")
+            display = f"{i}. {note['title']}"
+            self.listbox.insert(tk.END, display)
 
     def add_note(self):
         """
-        Inicia el proceso para añadir una nueva nota.
+        Solicita título y abre editor para nueva nota.
         """
-        title = simpledialog.askstring("Título de la Nota", "Ingresa el título de la nueva nota:")
+        title = simpledialog.askstring("Título de la Nota", "Ingresa el título:", parent=self.root)
         if not title:
-            return # El usuario canceló o no ingresó un título
+            return  # Cancelado
         self.open_note_editor(title, "", self.save_new_note)
 
-    def save_new_note(self, title, body):
+    def save_new_note(self, title: str, body: str):
         """
-        Guarda una nueva nota en la lista de notas.
-        
-        Args:
-            title: Título de la nueva nota.
-            body: Contenido de la nota.
+        Guarda una nueva nota en memoria y en disco.
         """
         self.notes.append({"title": title, "body": body})
         save_notes(self.notes, self.fernet)
         self.refresh_listbox()
-        messagebox.showinfo("Éxito", "Nota guardada correctamente.")
+        messagebox.showinfo("Éxito", "Nota guardada.", parent=self.root)
 
     def edit_note(self):
         """
-        Inicia el proceso de edición de una nota existente.
+        Abre el editor para la nota seleccionada.
         """
         sel = self.listbox.curselection()
         if not sel:
-            messagebox.showwarning("Selecciona una nota", "Debes seleccionar una nota para editar.")
+            messagebox.showwarning("Selecciona una nota", "Selecciona una nota para editar.", parent=self.root)
             return
         idx = sel[0]
         note = self.notes[idx]
         self.open_note_editor(note["title"], note["body"], lambda t, b: self.save_edited_note(idx, t, b))
 
-    def save_edited_note(self, idx, title, body):
+    def save_edited_note(self, idx: int, title: str, body: str):
         """
-        Actualiza una nota existente con nuevo contenido.
-        
-        Args:
-            idx: índice de la nota a editar.
-            title: Nuevo título
-            body: Nuevo contenido de la nota.
+        Actualiza nota existente y guarda cambios.
         """
         self.notes[idx] = {"title": title, "body": body}
         save_notes(self.notes, self.fernet)
         self.refresh_listbox()
-        messagebox.showinfo("Editado", "Nota editada correctamente.")
+        messagebox.showinfo("Editado", "Nota actualizada.", parent=self.root)
 
     def delete_note(self):
         """
-        Elimina una nota después de pedir confirmación al usuario.
+        Elimina la nota seleccionada tras confirmación.
         """
         sel = self.listbox.curselection()
         if not sel:
-            messagebox.showwarning("Selecciona una nota", "Debes seleccionar una nota para eliminar.")
+            messagebox.showwarning("Selecciona una nota", "Selecciona una nota para eliminar.", parent=self.root)
             return
         idx = sel[0]
-        confirm = messagebox.askyesno("Eliminar", "¿Estás seguro de eliminar esta nota?")
-        if confirm:
+        if messagebox.askyesno("Eliminar", "¿Seguro que deseas eliminar?", parent=self.root):
             del self.notes[idx]
             save_notes(self.notes, self.fernet)
             self.refresh_listbox()
-            messagebox.showinfo("Eliminado", "Nota eliminada correctamente.")
+            messagebox.showinfo("Eliminado", "Nota borrada.", parent=self.root)
 
-    def view_note(self, event):
+    def view_note(self, event=None):
         """
-        Muestra el contenido de una nota (al hacer doble clic en ella).
-        
-        Args:
-            event: Evento del mouse.
+        Muestra el contenido de la nota en modo sólo lectura.
         """
         sel = self.listbox.curselection()
         if not sel:
             return
-        idx = sel[0]
-        note = self.notes[idx]
+        note = self.notes[sel[0]]
         self.open_note_viewer(note["title"], note["body"])
 
-    def open_note_editor(self, title_default, body_default, on_save):
+    def open_note_editor(self, title_default: str, body_default: str, on_save):
         """
-        Abre un editor para crear o modificar una nota.
-        
-        Args:
-            title_default: Título predeterminado (puede estar vacío).
-            body_default: Contenido predeterminado (puede estar vacío).
-            on_save: Función callback que se llama al guardar una nota
+        Ventana de edición/creación de nota.
         """
         win = Toplevel(self.root)
         win.title("Editor de Nota")
+        win.resizable(False, False)
 
-        #Campo de título
-        tk.Label(win, text="Título:").pack()
-        title_entry = tk.Entry(win, width=50)
+        # Campo de título
+        ttk.Label(win, text="Título:", font=self.font_title).pack(pady=(10,0))
+        title_entry = ttk.Entry(win, width=50)
         title_entry.pack(padx=10, pady=5)
         title_entry.insert(0, title_default)
 
-        #Campo de contenido
-        tk.Label(win, text="Contenido:").pack()
-        body_text = scrolledtext.ScrolledText(win, width=60, height=15)
+        # Campo de contenido
+        ttk.Label(win, text="Contenido:", font=self.font_title).pack(pady=(10,0))
+        body_text = scrolledtext.ScrolledText(win, width=60, height=15, font=self.font_body)
         body_text.pack(padx=10, pady=5)
         body_text.insert("1.0", body_default)
 
         def guardar():
-            """
-            Valida los campos y guarda la nota utilizando el callback (on_save).
-            """
-            title = title_entry.get().strip()
-            body = body_text.get("1.0", tk.END).strip()
-            if not title or not body:
-                messagebox.showwarning("Campos requeridos", "El título y cuerpo no pueden estar vacíos.")
+            t = title_entry.get().strip()
+            b = body_text.get("1.0", tk.END).strip()
+            if not t or not b:
+                messagebox.showwarning("Campos vacíos", "Título y contenido no pueden estar vacíos.", parent=win)
                 return
-            on_save(title, body)
+            on_save(t, b)
             win.destroy()
 
-        tk.Button(win, text="Guardar", command=guardar).pack(pady=5)
+        ttk.Button(win, text="Guardar", command=guardar).pack(pady=10)
 
-    def open_note_viewer(self, title, body):
+    def open_note_viewer(self, title: str, body: str):
         """
-        Abre una ventana de solo lectura para ver el contenido de una nota.
-        
-        Args:
-            title: Título de la nota.
-            body: Contenido de la nota.
+        Ventana de sólo lectura para ver nota.
         """
         win = Toplevel(self.root)
         win.title(title)
-        text = scrolledtext.ScrolledText(win, width=60, height=20)
+        text = scrolledtext.ScrolledText(win, width=60, height=20, font=self.font_body)
         text.pack(padx=10, pady=10)
         text.insert("1.0", body)
-        text.config(state="disabled") #Solo lectura.
-        
+        text.config(state="disabled")
 
 
 def main():
     """
-    Función principal que inicializa la aplicación,
-    Solicita la contraseña al usuario y carga la interfaz.
+    Punto de entrada. Solicita contraseña y lanza la aplicación.
     """
     root = tk.Tk()
-    root.withdraw() # Oculta la ventana principal mientras se solicita la contraseña
-    
-    #Solicita la contraseña al usuario
-    password = simpledialog.askstring("Contraseña", "Ingresa tu contraseña:", show='*')
+    root.withdraw()  # Oculta ventana principal hasta autenticación
+
+    # Solicitar contraseña
+    password = simpledialog.askstring("Contraseña", "Ingresa tu contraseña:", show='*', parent=root)
     if not password:
-        return # El usuario canceló o no ingresó una contraseña
-    
-    #Deriva clave y crea objeto de cifrado Fernet
+        return  # Cancelado por el usuario
+
+    # Si no hay notas guardadas, pedir confirmación de contraseña
+    if not os.path.exists(NOTES_FILE):
+        confirm = simpledialog.askstring("Confirmar", "Confirma tu contraseña:", show='*', parent=root)
+        if confirm != password:
+            messagebox.showerror("Error", "Contraseñas no coinciden.", parent=root)
+            return
+
+    # Derivar clave y crear objeto Fernet
     key = make_key(password)
     fernet = Fernet(key)
 
     try:
-        #Intenta cargar notas con la contraseña proporcionada
+        # Cargar notas descifradas
         notes = load_notes(fernet)
     except InvalidToken:
-        messagebox.showerror("Error de Autenticación", "Contraseña incorrecta o archivo corrupto.")
+        messagebox.showerror("Autenticación", "Contraseña incorrecta o archivo corrupto.", parent=root)
         return
 
-    # Muestra la interfaz principal
+    # Mostrar ventana principal
     root.deiconify()
     app = SecureNotepadApp(root, fernet, notes)
     root.mainloop()
